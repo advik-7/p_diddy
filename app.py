@@ -1,15 +1,21 @@
+!pip install langchain_community pypdf streamlit faiss-cpu==1.7.4 sentence-transformers google-generativeai -qq
+
+
 import os
 import streamlit as st
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
 from sentence_transformers import SentenceTransformer
-from langchain.llms.base import LLM
-import google.generativeai as genai
 from typing import Optional, List, Mapping, Any
-import requests
+import google.generativeai as genai
+from langchain.llms.base import LLM
 
-# Initialize the custom Gemini LLM
+
+# Setting up the Gemini API key
+os.environ["GEMINI_API_KEY"] = "AIzaSyCF2Xymk8vra8xjTh3QIIEfrLoXRIHMmLk"
+
+# Custom class to interact with Google Gemini
 class CustomGemini:
     def __init__(self, temperature: float, max_tokens: int, model: str, google_api_key: str):
         self.temperature = temperature
@@ -29,6 +35,8 @@ class CustomGemini:
         response = self.model_instance.generate_content(prompt)
         return response.text
 
+
+# Custom LLM Wrapper for Gemini
 class CustomLLMWrapper(LLM):
     custom_llm: CustomGemini
 
@@ -47,73 +55,90 @@ class CustomLLMWrapper(LLM):
             "model": self.custom_llm.model,
         }
 
-# Streamlit interface
-st.title("Medical Document Retrieval and Generation with Gemini")
-st.sidebar.title("Load Document from GitHub")
 
-# URL of the PDF file on GitHub
-github_pdf_url = "https://github.com/advik-7/p_diddy/blob/main/L-G-0000597158-0002362898.pdf"
+# Process query with retrieval (RAG)
+def process_query_with_retrieval(file_path: str, query: str, chat_history: Optional[List[str]] = None) -> str:
+    loader = PyPDFLoader(file_path)
+    documents = loader.load()
 
-# Download the PDF file from GitHub
-response = requests.get(github_pdf_url)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+    texts = text_splitter.split_documents(documents)
 
-if response.status_code == 200:
-    # Save the file to a temporary location
-    temp_file_path = "L-G-0000597158-0002362898.pdf"
-    with open(temp_file_path, "wb") as temp_file:
-        temp_file.write(response.content)
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    embeddings = model.encode([t.page_content for t in texts])
 
-    # Load and process the document
-    try:
-        loader = PyPDFLoader(temp_file_path)
-        documents = loader.load()
+    class CustomEmbeddings:
+        def __init__(self, model):
+            self.model = model
 
-        # Split the document into smaller chunks
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=100
-        )
-        docs = text_splitter.split_documents(documents)
+        def embed_documents(self, texts):
+            return self.model.encode(texts)
 
-        # Embed the document chunks
-        st.write("### Processing Document...")
-        embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        vector_store = FAISS.from_documents(docs, embedder)
+        def embed_query(self, text):
+            return self.model.encode(text)
 
-        st.success("Document successfully processed and indexed!")
+        def __call__(self, text):
+            return self.model.encode(text)
 
-        # Query input
-        query = st.text_input("Enter your query:")
+    custom_embeddings = CustomEmbeddings(model)
 
-        if query:
-            with st.spinner("Retrieving relevant information..."):
-                retriever = vector_store.as_retriever()
-                relevant_docs = retriever.get_relevant_documents(query)
+    db = FAISS.from_embeddings(
+        text_embeddings=[(t.page_content, embedding) for t, embedding in zip(texts, embeddings)],
+        embedding=custom_embeddings
+    )
 
-                context = "\n".join([doc.page_content for doc in relevant_docs])
+    custom_gemini = CustomGemini(
+        temperature=0.7,
+        max_tokens=512,
+        model="gemini-1.5-flash",
+        google_api_key=os.environ["GEMINI_API_KEY"]
+    )
 
-                # Generate response
-                st.write("### Generating Response...")
-                custom_gemini = CustomGemini(
-                    temperature=0.7,
-                    max_tokens=200,
-                    model="gemini-model-name",
-                    google_api_key=os.getenv("GEMINI_API_KEY"),
-                )
-                llm = CustomLLMWrapper(custom_llm=custom_gemini)
-                response = llm(context + "\n\n" + query)
+    wrapped_llm = CustomLLMWrapper(custom_llm=custom_gemini)
 
-                st.write("### Response")
-                st.success(response)
-    except Exception as e:
-        st.error(f"Error processing the document: {str(e)}")
-    finally:
-        # Clean up the temporary file
-        os.remove(temp_file_path)
+    retriever = db.as_retriever(search_kwargs={"k": 3})
+    retrieved_docs = retriever.get_relevant_documents(query)
 
-else:
-    st.error(f"Error downloading the file from GitHub: {response.status_code}")
+    retrieved_content = "\n\n".join([doc.page_content for doc in retrieved_docs])
 
-st.sidebar.write("---")
-st.sidebar.write(
-    "This application uses Google Gemini and LangChain to retrieve and generate answers from medical documents."
-)
+    history_content = "\n".join(chat_history) if chat_history else ""
+    enhanced_query = f"""
+    You are a medical diagnosis expert. When responding to queries:
+    1. Provide a diagnosis or possible causes based on the details provided.
+    2. If the information provided is insufficient, clearly state what additional features or details are required. Use the format: 'Question: Can you provide more details about [specific feature]?' for requesting further input.
+
+    Here is the chat history for context:
+    {history_content}
+
+    Here are some relevant documents for context:
+    {retrieved_content}
+
+    Query: {query}
+    """
+
+    response = wrapped_llm(enhanced_query)
+    return response
+
+
+# Streamlit App
+st.title("Medical Diagnosis Assistant with RAG")
+
+# File uploader for PDF
+uploaded_file = st.file_uploader("Upload your PDF document", type=["pdf"])
+
+# Input fields for query and chat history
+query = st.text_input("Enter your medical query:")
+chat_history_input = st.text_area("Enter previous chat history (Optional):", height=150)
+
+# Convert chat history input to list
+chat_history = chat_history_input.split("\n") if chat_history_input else []
+
+if uploaded_file and query:
+    # Save the uploaded file temporarily
+    with open("temp.pdf", "wb") as f:
+        f.write(uploaded_file.read())
+
+    # Process the query with the uploaded file
+    response = process_query_with_retrieval("temp.pdf", query, chat_history)
+    st.subheader("Response:")
+    st.write(response)
