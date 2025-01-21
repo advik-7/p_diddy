@@ -9,9 +9,6 @@ import google.generativeai as genai
 from langchain.llms.base import LLM
 
 
-# Setting up the Gemini API key
-os.environ["GEMINI_API_KEY"] = "AIzaSyCF2Xymk8vra8xjTh3QIIEfrLoXRIHMmLk"
-
 # Custom class to interact with Google Gemini
 class CustomGemini:
     def __init__(self, temperature: float, max_tokens: int, model: str, google_api_key: str):
