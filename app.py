@@ -1,4 +1,5 @@
 import os
+import requests
 import streamlit as st
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -117,9 +118,6 @@ def process_query_with_retrieval(file_path: str, query: str, chat_history: Optio
 # Streamlit App
 st.title("Medical Diagnosis Assistant with RAG")
 
-# File uploader for PDF
-uploaded_file = st.file_uploader("Upload your PDF document", type=["pdf"])
-
 # Input fields for query and chat history
 query = st.text_input("Enter your medical query:")
 chat_history_input = st.text_area("Enter previous chat history (Optional):", height=150)
@@ -127,12 +125,19 @@ chat_history_input = st.text_area("Enter previous chat history (Optional):", hei
 # Convert chat history input to list
 chat_history = chat_history_input.split("\n") if chat_history_input else []
 
-if uploaded_file and query:
-    # Save the uploaded file temporarily
-    with open("temp.pdf", "wb") as f:
-        f.write(uploaded_file.read())
+# Download the PDF from the GitHub URL
+pdf_url = "https://github.com/advik-7/p_diddy/blob/main/L-G-0000597158-0002362898.pdf?raw=true"
+response = requests.get(pdf_url)
 
-    # Process the query with the uploaded file
-    response = process_query_with_retrieval("temp.pdf", query, chat_history)
-    st.subheader("Response:")
-    st.write(response)
+# Check if the download was successful
+if response.status_code == 200:
+    with open("temp.pdf", "wb") as f:
+        f.write(response.content)
+
+    if query:
+        # Process the query with the downloaded file
+        response = process_query_with_retrieval("temp.pdf", query, chat_history)
+        st.subheader("Response:")
+        st.write(response)
+else:
+    st.error("Failed to download the PDF. Please check the URL.")
