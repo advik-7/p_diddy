@@ -7,6 +7,7 @@ from sentence_transformers import SentenceTransformer
 from langchain.llms.base import LLM
 import google.generativeai as genai
 from typing import Optional, List, Mapping, Any
+import requests
 
 # Initialize the custom Gemini LLM
 class CustomGemini:
@@ -48,15 +49,19 @@ class CustomLLMWrapper(LLM):
 
 # Streamlit interface
 st.title("Medical Document Retrieval and Generation with Gemini")
-st.sidebar.title("Upload Document")
+st.sidebar.title("Load Document from GitHub")
 
-uploaded_file = st.sidebar.file_uploader("Upload a PDF file", type="pdf")
+# URL of the PDF file on GitHub
+github_pdf_url = "https://github.com/advik-7/p_diddy/blob/main/L-G-0000597158-0002362898.pdf
 
-if uploaded_file:
-    # Save the uploaded file to a temporary location
-    temp_file_path = f"temp_{uploaded_file.name}"
+# Download the PDF file from GitHub
+response = requests.get(github_pdf_url)
+
+if response.status_code == 200:
+    # Save the file to a temporary location
+    temp_file_path = "L-G-0000597158-0002362898.pdf"
     with open(temp_file_path, "wb") as temp_file:
-        temp_file.write(uploaded_file.getbuffer())
+        temp_file.write(response.content)
 
     # Load and process the document
     try:
@@ -104,6 +109,9 @@ if uploaded_file:
     finally:
         # Clean up the temporary file
         os.remove(temp_file_path)
+
+else:
+    st.error(f"Error downloading the file from GitHub: {response.status_code}")
 
 st.sidebar.write("---")
 st.sidebar.write(
