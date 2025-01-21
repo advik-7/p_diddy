@@ -1,5 +1,6 @@
 streamlit
-langchain
+langchain==0.0.304
 faiss-cpu
 sentence-transformers
 google-generativeai
+pypdf
