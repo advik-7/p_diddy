@@ -1,6 +1,3 @@
-!pip install langchain_community pypdf streamlit faiss-cpu==1.7.4 sentence-transformers google-generativeai -qq
-
-
 import os
 import streamlit as st
 from langchain.document_loaders import PyPDFLoader
