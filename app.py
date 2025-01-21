@@ -52,7 +52,7 @@ st.title("Medical Document Retrieval and Generation with Gemini")
 st.sidebar.title("Load Document from GitHub")
 
 # URL of the PDF file on GitHub
-github_pdf_url = "https://github.com/advik-7/p_diddy/blob/main/L-G-0000597158-0002362898.pdf
+github_pdf_url = "https://github.com/advik-7/p_diddy/blob/main/L-G-0000597158-0002362898.pdf"
 
 # Download the PDF file from GitHub
 response = requests.get(github_pdf_url)
